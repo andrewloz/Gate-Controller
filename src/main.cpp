@@ -380,6 +380,7 @@ void loop() {
           case STOPPING:
             stopMoving();
             moveState = LOCKING;
+
             break;
         }
 
