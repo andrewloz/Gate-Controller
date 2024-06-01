@@ -176,8 +176,13 @@ void setup() {
   pinMode(lockPin, OUTPUT);
 }
 
+bool isStalled = false;
+
 void loop() {
   // Update all inputs
+  char *str = 0;
+  char buf[80];
+  delay(2);
   readInputs();
   if (closedActive()) {
     // Serial.println("Closed");
@@ -226,14 +231,16 @@ void loop() {
       startMoving();
       openWhenStopped = false;
     } else if (moveState != STOPPED) {
-      long allowedCurrent = (long)rampLevel * 2048L / 255L + 100L;
+      long allowedCurrent = (long)rampLevel * 5000 / 255L + 400L;
       long current = max(lCurrentVal, rCurrentVal);
       if (moveState == FULL_SPEED) {
           timeAtFullSpeed = millis() - lastMoveStateTime;
       }
-      if (moveState > UNLOCKING && current > allowedCurrent) {
+      if (!isStalled && moveState > UNLOCKING && current > allowedCurrent) {
+        snprintf(buf, sizeof(buf), "Stalled: %d %d %d", current, allowedCurrent, rampLevel);
+        Serial.println(buf);
+        isStalled = true;
         stopMoving();
-        Serial.println("Stalled");
         // Fast stop, then go to opening if was closing. For opening, just stop.
         if (dirState == CLOSING) {
           openWhenStopped = true;
@@ -248,15 +255,13 @@ void loop() {
         moveState = RAMPING_DOWN;
         timeToNextChange = 1;
       } else if (millis() - lastMoveStateTime > timeToNextChange) {
-        Serial.print("Time for next change from ");
-        Serial.print(moveState);
-        Serial.print(" to ");
+        int oldState = moveState;
         if (moveState == UNLOCKING) {
-          Serial.println("End of unlock");
+          str ="End of unlock";
           digitalWrite(unlockPin, LOW);
           // digitalWrite(lockPin, LOW);
         } else if (moveState == LOCKING) {
-          Serial.println("End of lock");
+          str = "End of lock";
           // digitalWrite(unlockPin, LOW);
           digitalWrite(lockPin, LOW);
           moveState = STOPPED;
@@ -270,7 +275,14 @@ void loop() {
         } else if (moveState == UNLOCKING) {
           moveState = RAMPING_UP;
         }
-        Serial.println(moveState);
+        if (oldState != moveState) {
+          char numBuf[10];
+          if (!str) {
+            str = itoa(moveState, numBuf, 10);
+          }
+          snprintf(buf, sizeof(buf), "Time for change from %d to %s", oldState, str);
+          Serial.println(buf);
+        }
         lastMoveStateTime = millis();
         switch (moveState) {
           case RAMPING_UP: {
@@ -323,7 +335,9 @@ void loop() {
             break;
           case SLOW:
             // Use sensors here to determine if we are at the end.
-            Serial.println("Slow");
+            if (oldState != SLOW) {
+              Serial.println("Slow");
+            }
             if (closedActive()) {
               locState = CLOSED;
               moveState = STOPPING;
@@ -346,15 +360,18 @@ void loop() {
             break;
           case STOPPED:
             Serial.println("Stopped");
+            isStalled = false;
             lastMoveStateTime = 0;
             timeToNextChange = 0;
             break;
           case UNLOCKING:
+            isStalled = false;
             Serial.println("Unlocking");
             digitalWrite(unlockPin, HIGH);
             timeToNextChange = lockTime;
             break;
           case LOCKING:
+            isStalled = false;
             Serial.println("Locking");
             digitalWrite(lockPin, HIGH);
             timeToNextChange = lockTime;
@@ -423,13 +440,22 @@ void readBlockSense() {
   }
 }
 
+int multiRead(int pin, int count = 4) {
+  analogRead(lCurrent);
+  long sum = 0;
+  for (int i = 0; i < count; i++) {
+    sum += analogRead(pin);
+  }
+  return (int)(sum / count);
+}
+
 void readInputs() {
   // Read all inputs
   readAnInput(openA, openAState, openAChangeTime, openAConfTime, openAActive);
   readAnInput(openB, openBState, openBChangeTime, openBConfTime, openBActive);
   readBlockSense();
-  lCurrentVal = analogRead(lCurrent);
-  rCurrentVal = analogRead(rCurrent);
+  lCurrentVal = multiRead(lCurrent);
+  rCurrentVal = multiRead(rCurrent);
   leftStopVal = analogRead(leftStop);
   rightStopVal = analogRead(rightStop);
 }
@@ -457,10 +483,10 @@ void stopMoving() {
   if (!anyStopSensorActive()) {
     locState = MID;
   }
+  analogWrite(lMotor, 0);
+  analogWrite(rMotor, 0);
   if (moveState != STOPPED) {
     moveState = STOPPING;
-    digitalWrite(lMotor, LOW);
-    digitalWrite(rMotor, LOW);
     lastMoveStateTime = millis();
     timeToNextChange = stopTime;
     rampLevel = 0;
