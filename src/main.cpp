@@ -31,7 +31,7 @@ const int fastStall = 2048; // ~ 4096*(2500/5000) 2.5A
 // Open/Close fast time
 const unsigned long lockTime = 100;    // 100ms
 const unsigned long stopTime = 500;  // 500ms
-const unsigned long fastTime = 5000;  // 5 seconds
+const unsigned long fastTime = 7000;  // 7 seconds
 const unsigned long slowPercent = 50; // 50% of fast time
 
 // Pedestrian open fast time target
@@ -82,7 +82,7 @@ const MoveState nextAction[] = {
 // values are hard-coded.
 int leftStopRestVal = 2048;
 int rightStopRestVal = 2048;
-int stopTrigThreshold = 150;
+int stopTrigThreshold = 80;
 // Current values
 int leftStopVal = 0;
 int rightStopVal = 0;
@@ -126,7 +126,39 @@ int blockSenseState = LOW;
 
 bool openWhenStopped = false;
 
+char *targetStr(Target t) {
+  switch (t) {
+    case OPEN_T:
+      return "OPEN_T";
+    case CLOSE_T:
+      return "CLOSE_T";
+    case PEDESTRIAN_T:
+      return "PEDESTRIAN_T";
+  }
+  return "UNKNOWN";
+}
 
+char *moveStr(MoveState m) {
+  switch (m) {
+    case STOPPED:
+      return "STOPPED";
+    case UNLOCKING:
+      return "UNLOCKING";
+    case RAMPING_UP:
+      return "RAMPING_UP";
+    case RAMPING_DOWN:
+      return "RAMPING_DOWN";
+    case FULL_SPEED:
+      return "FULL_SPEED";
+    case SLOW:
+      return "SLOW";
+    case STOPPING:
+      return "STOPPING";
+    case LOCKING:
+      return "LOCKING";
+  }
+  return "UNKNOWN";
+}
 
 // put function declarations here:
 void logit();
@@ -143,22 +175,24 @@ bool lateStopActive() {
   return abs(val - restVal) > stopTrigThreshold;
 }
 
+static bool prevClosedActive = false;
+static bool prevOpenActive = false;
 bool openActive() {
-  static bool prevActive = false;
   bool active = rightStopVal - rightStopRestVal > stopTrigThreshold;
-  if (active && !prevActive) {
+  if (active && !prevOpenActive) {
     Serial.println("Open active");
-    prevActive = active;
+    prevOpenActive = active;
+    prevClosedActive = false;
   }
   return active;
 }
 
 bool closedActive() {
-  static bool prevActive = false;
   bool active = leftStopVal - leftStopRestVal < -stopTrigThreshold;
-  if (active && !prevActive) {
+  if (active && !prevClosedActive) {
     Serial.println("Closed active");
-    prevActive = active;
+    prevClosedActive = active;
+    prevOpenActive = false;
   }
   return active;
 }
@@ -210,12 +244,13 @@ void loop() {
         // FIXME: A bit dubious, should explicitly use A or B to decide on action, or treat restart as full open
         target = CLOSE_T;
         Serial.print("Open, target is ");
-        Serial.println(target);
+        Serial.println(targetStr(target));
       } else if (locState == CLOSED) {
-        Serial.println("Closed, so open");
+        Serial.println("Closed, target is ");
+        Serial.println(targetStr(target));
         target = (openAActive) ? OPEN_T : PEDESTRIAN_T;
       } else { // UNKNOWN
-        Serial.println("Unknown state, defaulting to close");
+        Serial.println("Unknown state, defaulting to close_t");
         target = CLOSE_T;
       }
       rampLevel = 0;
@@ -230,7 +265,8 @@ void loop() {
       target = OPEN_T;
       startMoving();
       openWhenStopped = false;
-    } else if (moveState != STOPPED) {
+    } else {
+      // TODO: fix this when the current sense gain has been set.
       long allowedCurrent = (long)rampLevel * 5000 / 255L + 400L;
       long current = max(lCurrentVal, rCurrentVal);
       if (moveState == FULL_SPEED) {
@@ -254,48 +290,29 @@ void loop() {
         Serial.println("Pedestrian time up, stopping");
         moveState = RAMPING_DOWN;
         timeToNextChange = 1;
-      } else if (millis() - lastMoveStateTime > timeToNextChange) {
+      } else if (timeToNextChange > 0 && millis() - lastMoveStateTime > timeToNextChange) {
         int oldState = moveState;
-        if (moveState == UNLOCKING) {
-          str ="End of unlock";
-          digitalWrite(unlockPin, LOW);
-          // digitalWrite(lockPin, LOW);
-        } else if (moveState == LOCKING) {
-          str = "End of lock";
-          // digitalWrite(unlockPin, LOW);
-          digitalWrite(lockPin, LOW);
-          moveState = STOPPED;
-        }
-        if (moveState == UNLOCKING && (locState == CLOSED || locState == OPEN)) {
-          timeAtFullSpeed = fastTime;
-        }
-        // if (moveState == UNLOCKING && !lateStopActive() && (timeAtFullSpeed < 500 || locState == UNKNOWN)) {
-        if (moveState == UNLOCKING && !(locState == CLOSED || locState == OPEN) && (timeAtFullSpeed < 500 || locState == UNKNOWN)) {
-          moveState = SLOW;
-        } else if (moveState == UNLOCKING) {
-          moveState = RAMPING_UP;
-        }
-        if (oldState != moveState) {
-          char numBuf[10];
-          if (!str) {
-            str = itoa(moveState, numBuf, 10);
-          }
-          snprintf(buf, sizeof(buf), "Time for change from %d to %s", oldState, str);
-          Serial.println(buf);
-        }
         lastMoveStateTime = millis();
         switch (moveState) {
           case RAMPING_UP: {
-            Serial.println("Ramping up");
-            rampLevel = rampLevel == 0 ? startSpeed : rampLevel + rampIncrement;
+            if (rampLevel == 0) {
+              Serial.println("Ramping up from 0");
+              rampLevel = startSpeed;
+              timeToNextChange = rampTime;
+            } else {
+              rampLevel += rampIncrement;
+            }
             if (rampLevel >= 255) {
               rampLevel = 255;
               // moveState = FULL_SPEED; - done by nextAction
               // If we stopped in the middle for some reason, limit the return time to the actual previous time at full speed.
               if (timeAtFullSpeed < fastTime - 400) {
                 // valid if always reverse from midway
+                Serial.print("Time at full speed will be ");
+                Serial.println(timeAtFullSpeed);
                 timeToNextChange = timeAtFullSpeed;
               } else {
+                Serial.println("Time at full speed will be 7 seconds");
                 timeToNextChange = fastTime;
               }
               timeAtFullSpeed = 0;
@@ -329,7 +346,7 @@ void loop() {
           }
             break;
           case FULL_SPEED:
-            Serial.println("Full speed");
+            Serial.println("Full speed completed, ramping down");
             moveState = RAMPING_DOWN;
             timeToNextChange = rampDownTime;
             break;
@@ -347,12 +364,6 @@ void loop() {
             } else {
               locState = MID;
             }
-            if (lateStopActive()) {
-              moveState = STOPPING;
-              locState = dirState == OPENING ? OPEN : CLOSED;
-            } else {
-              moveState = SLOW;
-            }
             if (timeToNextChange < 100) {
               Serial.println("Time to next change < 100");
               timeToNextChange = 100;
@@ -366,22 +377,34 @@ void loop() {
             break;
           case UNLOCKING:
             isStalled = false;
-            Serial.println("Unlocking");
-            digitalWrite(unlockPin, HIGH);
-            timeToNextChange = lockTime;
+            Serial.println("Unlocking completed, starting to move");
+            if (locState == CLOSED || locState == OPEN) {
+              timeAtFullSpeed = fastTime;
+              moveState = RAMPING_UP;
+              timeToNextChange = rampTime;
+            } else if (timeAtFullSpeed < 500 || locState == UNKNOWN) {
+              moveState = SLOW;
+              timeToNextChange = 100;
+            }
+            digitalWrite(unlockPin, LOW);
             break;
           case LOCKING:
             isStalled = false;
-            Serial.println("Locking");
-            digitalWrite(lockPin, HIGH);
-            timeToNextChange = lockTime;
+            Serial.println("Locking completed, stopped");
+            digitalWrite(lockPin, LOW);
+            timeToNextChange = 1;
             moveState = STOPPED;
             break;
           case STOPPING:
             stopMoving();
             moveState = LOCKING;
-
+            timeToNextChange = stopTime;
+            digitalWrite(lockPin, HIGH);
             break;
+        }
+        if (oldState != moveState) {
+          snprintf(buf, sizeof(buf), "Time for change from %s to %s", moveStr((MoveState)oldState), moveStr((MoveState)moveState));
+          Serial.println(buf);
         }
 
       }
