@@ -31,11 +31,11 @@ const int fastStall = 2800; // ~ 4096*(2500/5000) 2.5A
 // Open/Close fast time
 const unsigned long lockTime = 100;    // 100ms
 const unsigned long stopTime = 500;  // 500ms
-const unsigned long fastTime = 8500;  // 8.5 seconds
+const unsigned long fastTime = 13000;  // 8.5 seconds
 const unsigned long slowPercent = 50; // 50% of fast time
 
 // Pedestrian open fast time target
-const unsigned long pedTime = 3000;  // 1.5 seconds
+const unsigned long pedTime = 6000;  // 1.5 seconds
 
 typedef enum {
   UNKNOWN,  // Just started up, no end sensor detecting
@@ -178,7 +178,7 @@ bool lateStopActive() {
 static bool prevClosedActive = false;
 static bool prevOpenActive = false;
 bool openActive() {
-  bool active = abs(rightStopVal - rightStopRestVal) > stopTrigThreshold;
+  bool active = rightStopVal - rightStopRestVal > stopTrigThreshold;
   if (active && !prevOpenActive) {
     Serial.println("Open active");
     prevOpenActive = active;
@@ -188,7 +188,7 @@ bool openActive() {
 }
 
 bool closedActive() {
-  bool active = abs(leftStopVal - leftStopRestVal) > stopTrigThreshold;
+  bool active = leftStopVal - leftStopRestVal < -stopTrigThreshold;
   if (active && !prevClosedActive) {
     Serial.println("Closed active");
     prevClosedActive = active;
