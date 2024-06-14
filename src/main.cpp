@@ -2,8 +2,8 @@
 
 const int lCurrent = A0;
 const int rCurrent = A1;
-const int leftStop = A2;
-const int rightStop = A3;
+const int leftStop = A3;
+const int rightStop = A2;
 
 const int openA = D1;
 const int openB = D2;
@@ -22,16 +22,16 @@ const unsigned long rampDownTime = 50;
 const int maxSpeed = 255;
 const int startSpeed = 55;
 const int rampIncrement = 20;
-const int slowSpeed = 87;
+const int slowSpeed = 80;
 
 // Stall detection
-const int slowStall = 500;  // ~ 4096*(600/5000) 600mA
-const int fastStall = 2048; // ~ 4096*(2500/5000) 2.5A
+const int slowStall = 900;  // ~ 4096*(600/5000) 600mA
+const int fastStall = 2800; // ~ 4096*(2500/5000) 2.5A
 
 // Open/Close fast time
 const unsigned long lockTime = 100;    // 100ms
 const unsigned long stopTime = 500;  // 500ms
-const unsigned long fastTime = 7000;  // 7 seconds
+const unsigned long fastTime = 8000;  // 7 seconds
 const unsigned long slowPercent = 50; // 50% of fast time
 
 // Pedestrian open fast time target
@@ -80,9 +80,9 @@ const MoveState nextAction[] = {
 
 // Stop sensor quiescent values.  Should be saved in EEPROM, but for now initial
 // values are hard-coded.
-int leftStopRestVal = 2048;
-int rightStopRestVal = 2048;
-int stopTrigThreshold = 80;
+int leftStopRestVal = 2042;
+int rightStopRestVal = 2080;
+int stopTrigThreshold = 50;
 // Current values
 int leftStopVal = 0;
 int rightStopVal = 0;
@@ -272,7 +272,7 @@ void loop() {
       if (moveState == FULL_SPEED) {
           timeAtFullSpeed = millis() - lastMoveStateTime;
       }
-      if (!isStalled && moveState > UNLOCKING && current > allowedCurrent) {
+      if (!isStalled && moveState > UNLOCKING && moveState != STOPPING && moveState != LOCKING && current > allowedCurrent) {
         snprintf(buf, sizeof(buf), "Stalled: %d %d %d", current, allowedCurrent, rampLevel);
         Serial.println(buf);
         isStalled = true;
@@ -292,6 +292,7 @@ void loop() {
         timeToNextChange = 1;
       } else if (timeToNextChange > 0 && millis() - lastMoveStateTime > timeToNextChange) {
         int oldState = moveState;
+        int dpin = lMotor;
         lastMoveStateTime = millis();
         switch (moveState) {
           case RAMPING_UP: {
@@ -341,7 +342,7 @@ void loop() {
             } else {
               timeToNextChange = rampDownTime;
             }
-            int dpin = dirState == OPENING ? lMotor : rMotor;
+            dpin = dirState == OPENING ? lMotor : rMotor;
             analogWrite(dpin, rampLevel);
           }
             break;
@@ -368,12 +369,17 @@ void loop() {
               Serial.println("Time to next change < 100");
               timeToNextChange = 100;
             }
+            rampLevel = slowSpeed;
+            dpin = dirState == OPENING ? lMotor : rMotor;
+            analogWrite(dpin, rampLevel);
             break;
           case STOPPED:
             Serial.println("Stopped");
             isStalled = false;
             lastMoveStateTime = 0;
             timeToNextChange = 0;
+            if (locState == CLOSED) {
+            }
             break;
           case UNLOCKING:
             isStalled = false;
@@ -385,6 +391,9 @@ void loop() {
             } else if (timeAtFullSpeed < 500 || locState == UNKNOWN) {
               moveState = SLOW;
               timeToNextChange = 100;
+            } else {
+              moveState = RAMPING_UP;
+              timeToNextChange = rampTime;
             }
             digitalWrite(unlockPin, LOW);
             break;
@@ -408,8 +417,6 @@ void loop() {
         }
 
       }
-    } else if (locState == CLOSED) {
-      // If stopped and CLOSED, check for involuntary movement
     }
   }
 
