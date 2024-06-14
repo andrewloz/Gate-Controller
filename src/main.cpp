@@ -178,7 +178,7 @@ bool lateStopActive() {
 static bool prevClosedActive = false;
 static bool prevOpenActive = false;
 bool openActive() {
-  bool active = rightStopVal - rightStopRestVal > stopTrigThreshold;
+  bool active = abs(rightStopVal - rightStopRestVal) > stopTrigThreshold;
   if (active && !prevOpenActive) {
     Serial.println("Open active");
     prevOpenActive = active;
@@ -188,7 +188,7 @@ bool openActive() {
 }
 
 bool closedActive() {
-  bool active = leftStopVal - leftStopRestVal < -stopTrigThreshold;
+  bool active = abs(leftStopVal - leftStopRestVal) > stopTrigThreshold;
   if (active && !prevClosedActive) {
     Serial.println("Closed active");
     prevClosedActive = active;

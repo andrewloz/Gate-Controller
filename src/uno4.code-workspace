@@ -1,0 +1,19 @@
+{
+	"folders": [
+		{
+			"path": "../../Lilygo1"
+		},
+		{
+			"name": "Gate Controller",
+			"path": ".."
+		}
+	],
+	"settings": {
+		"cSpell.words": [
+			"digin",
+			"digins",
+			"dpin",
+			"logit"
+		]
+	}
+}
