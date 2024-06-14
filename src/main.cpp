@@ -31,11 +31,11 @@ const int fastStall = 2800; // ~ 4096*(2500/5000) 2.5A
 // Open/Close fast time
 const unsigned long lockTime = 100;    // 100ms
 const unsigned long stopTime = 500;  // 500ms
-const unsigned long fastTime = 8000;  // 7 seconds
+const unsigned long fastTime = 8500;  // 8.5 seconds
 const unsigned long slowPercent = 50; // 50% of fast time
 
 // Pedestrian open fast time target
-const unsigned long pedTime = 1500;  // 1.5 seconds
+const unsigned long pedTime = 3000;  // 1.5 seconds
 
 typedef enum {
   UNKNOWN,  // Just started up, no end sensor detecting
