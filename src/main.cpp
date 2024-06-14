@@ -358,20 +358,20 @@ void loop() {
             }
             if (closedActive()) {
               locState = CLOSED;
-              moveState = STOPPING;
+              stopMoving();
             } else if (openActive()) {
               locState = OPEN;
-              moveState = STOPPING;
+              stopMoving();
             } else {
               locState = MID;
+              rampLevel = slowSpeed;
+              dpin = dirState == OPENING ? lMotor : rMotor;
+              analogWrite(dpin, rampLevel);
             }
             if (timeToNextChange < 100) {
               Serial.println("Time to next change < 100");
               timeToNextChange = 100;
             }
-            rampLevel = slowSpeed;
-            dpin = dirState == OPENING ? lMotor : rMotor;
-            analogWrite(dpin, rampLevel);
             break;
           case STOPPED:
             Serial.println("Stopped");
@@ -405,9 +405,9 @@ void loop() {
             moveState = STOPPED;
             break;
           case STOPPING:
-            stopMoving();
+            // stopMoving();
             moveState = LOCKING;
-            timeToNextChange = stopTime;
+            timeToNextChange = lockTime;
             digitalWrite(lockPin, HIGH);
             break;
         }
